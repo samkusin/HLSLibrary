@@ -1,4 +1,8 @@
+data/
+
 # Compiled Object files
+build/
+build-xcode/
 *.slo
 *.lo
 *.o
