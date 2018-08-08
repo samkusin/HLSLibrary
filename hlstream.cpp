@@ -128,7 +128,7 @@ void HLStream::update()
                 size_t fileSize = _inputCbs.sizeCb(_inputResourceHandle);
                 if (fileSize != 0)
                 {
-                    _inputBuffer = std::move(Buffer(fileSize, _memory));
+                    _inputBuffer = Buffer(fileSize, _memory);
                     uint8_t* buf = _inputBuffer.obtain(fileSize);
                     if (buf)
                     {
@@ -567,8 +567,8 @@ void HLStream::resetStreams()
     
     for (int i = 0; i < _bufferCount; ++i)
     {
-        _audioStreams[i] = std::move(ElementaryStream());
-        _videoStreams[i] = std::move(ElementaryStream());
+        _audioStreams[i] = ElementaryStream();
+        _videoStreams[i] = ElementaryStream();
     }
 
    

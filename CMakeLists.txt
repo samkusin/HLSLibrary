@@ -11,9 +11,15 @@ set( LOCAL_CPP_LINK_FLAGS "-std=c++11 -stdlib=libc++" )
 set( PROJECT_INCLUDES
      ${CMAKE_CURRENT_SOURCE_DIR}/avdefs.hpp
      ${CMAKE_CURRENT_SOURCE_DIR}/avlib.hpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/elemstream.hpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/hlstream.hpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/hlsplaylist.hpp
      ${CMAKE_CURRENT_SOURCE_DIR}/mpegts.hpp )
 set( PROJECT_SOURCES
      ${CMAKE_CURRENT_SOURCE_DIR}/avlib.cpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/elemstream.cpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/hlstream.cpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/hlsplaylist.cpp
      ${CMAKE_CURRENT_SOURCE_DIR}/mpegts.cpp
      ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp )
 set( PROJECT_LIBRARIES )

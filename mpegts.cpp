@@ -12,9 +12,13 @@
 
 #include <cstdlib>
 #include <algorithm>
+#include <cassert>
 
 namespace cinekav { namespace mpegts {
 
+//  0x0f        = AAC
+//  0x1b        = H.264 (AVC1)
+//
 static uint8_t kSupportedStreamFormats[16][16] = {
     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 },
@@ -34,327 +38,6 @@ static uint8_t kSupportedStreamFormats[16][16] = {
     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 };
 
-ElementaryStream::ElementaryStream() :
-    _type(kNull),
-    _index(0),
-    _dts(0),
-    _lastPts(0),
-    _firstPts(0),
-    _firstDts(0),
-    _frameLength(0),
-    _frameCount(0),
-    _headerFlags(0),
-    _streamId(0),
-    _head(nullptr),
-    _tail(nullptr),
-    _prev(nullptr)
-{
-}
-
-ElementaryStream::ElementaryStream(Type type, uint16_t index) :
-    _type(type),
-    _index(index),
-    _dts(0),
-    _lastPts(0),
-    _firstPts(0),
-    _firstDts(0),
-    _frameLength(0),
-    _frameCount(0),
-    _headerFlags(0),
-    _streamId(0),
-    _head(nullptr),
-    _tail(nullptr),
-    _prev(nullptr)
-{
-}
-
-ElementaryStream::~ElementaryStream()
-{
-    while (_head)
-    {
-        auto next = _head->next;
-        Memory::destroy(_head);
-        _head = next;
-    }
-    _tail = nullptr;
-}
-
-ElementaryStream::ElementaryStream(ElementaryStream&& other) :
-    _type(other._type),
-    _index(other._index),
-    _dts(other._dts),
-    _lastPts(other._lastPts),
-    _firstPts(other._firstPts),
-    _firstDts(other._firstDts),
-    _frameLength(other._frameLength),
-    _frameCount(other._frameCount),
-    _header(std::move(other._header)),
-    _headerFlags(other._headerFlags),
-    _streamId(other._streamId),
-    _head(other._head),
-    _tail(other._tail),
-    _prev(other._prev)
-{
-    other._type = kNull;
-    other._index = 0;
-    other._head = other._tail = nullptr;
-    other._prev = nullptr;
-    other._lastPts = other._firstDts = other._dts = other._firstPts = 0;
-    other._frameLength = 0;
-    other._frameCount = 0;
-    other._headerFlags = 0;
-    other._streamId = 0;
-}
-
-ElementaryStream& ElementaryStream::operator=(ElementaryStream&& other)
-{
-    _type = other._type;
-    _index = other._index;
-    _head = other._head;
-    _tail = other._tail;
-    _prev = other._prev;
-    _dts = other._dts;
-    _firstDts = other._firstDts;
-    _firstPts = other._firstPts;
-    _lastPts = other._lastPts;
-    _frameLength = other._frameLength;
-    _frameCount = other._frameCount;
-    
-    _header = std::move(other._header);
-    _headerFlags = other._headerFlags;
-    _streamId = other._streamId;
-    
-    other._type = kNull;
-    other._index = 0;
-    other._head = other._tail = nullptr;
-    other._prev = nullptr;
-    other._lastPts = other._firstDts = other._dts = other._firstPts = 0;
-    other._frameLength = 0;
-    other._frameCount = 0;
-    other._headerFlags = 0;
-    other._streamId = 0;
-    
-    return *this;
-}
-
-int32_t ElementaryStream::parseHeader(Buffer& buffer, bool start)
-{
-    if (start)
-    {
-        //  parse the PES header
-        //  note, the optional pes header is not available for stream IDs
-        //  0xbe and 0xbf (and possibly more??)
-        //  0xbe = Padding stream
-        //  0xbf = Private stream 2
-        //  http://dvd.sourceforge.net/dvdinfo/pes-hdr.html
-        uint32_t startCode = buffer.pullUInt32();
-        if ((startCode & 0xffffff00) != 0x00000100)
-            return -1;
-        _streamId = (uint8_t)(startCode & 0x000000ff);
-        buffer.skip(2);         // PES Packet Length (needed?)
-        if (_streamId != 0xbe && _streamId != 0xbf)
-        {
-            //  parse the optional header
-            _headerFlags = buffer.pullUInt16();
-            
-            if ((_headerFlags & 0xc000) != 0x8000)
-                return -1;
-            if ((_headerFlags & 0x3000) != 0x0000)
-                return -1;
-            
-            uint32_t hdrLen = buffer.pullByte();
-            if (hdrLen > 0)
-            {
-                _header = std::move(Buffer(hdrLen));
-            }
-        }
-    }
-    
-    uint32_t hdrLen = _header.writeAvailable();
-    if (hdrLen)
-    {
-        if (hdrLen > buffer.available())
-            hdrLen = buffer.available();
-        buffer.pullBytesInto(_header, hdrLen, nullptr);
-        hdrLen = _header.writeAvailable();
-    
-        //  header to read
-        if (hdrLen == 0)
-        {
-            //  header to parse
-            
-            if ((_headerFlags & 0x00c0) == 0x0080)
-            {
-                // parse pts
-                updatePts(pullTimecodeFromBuffer(_header));
-                
-            }
-            else if ((_headerFlags & 0x00c0) == 0x00c0)
-            {
-                // parse pts, dts
-                updatePtsDts
-                (
-                    pullTimecodeFromBuffer(_header),
-                    pullTimecodeFromBuffer(_header)
-                );
-            }
-        }
-    }
-    return hdrLen;
-}
-
-bool ElementaryStream::appendFrame(Buffer& buffer, uint32_t len)
-{
-    auto node = _tail;
-    uint32_t xtra = 0;
-    if (!node)
-    {
-        xtra = len;
-        len = 0;
-    }
-    else if (len > node->buffer.writeAvailable())
-    {
-        xtra = len - node->buffer.writeAvailable();
-        len = node->buffer.writeAvailable();
-    }
-    //  len will be zero if there is no tail buffer.
-    if (len > 0)
-    {
-        buffer.pullBytesInto(_tail->buffer, len, nullptr);
-    }
-    if (xtra > 0)
-    {
-        node = _tail;
-        _tail = Memory::create<BufferNode>();
-        _tail->buffer = std::move(Buffer(kDefaultBufferSize));
-        _tail->next = nullptr;
-        if (node)
-        {
-            node->next = _tail;
-        }
-        buffer.pullBytesInto(_tail->buffer, xtra, nullptr);
-    }
-    if (!_head)
-    {
-        _head = _tail;
-    }
-    return true;
-}
-
-uint64_t ElementaryStream::pullTimecodeFromBuffer(Buffer& buffer)
-{
-    uint64_t tc = buffer.pullByte() << 29;
-    tc |= (buffer.pullByte() << 22);
-    tc |= ((buffer.pullByte() & 0xfe) << 14);
-    tc |= (buffer.pullByte()) << 7;
-    tc |= ((buffer.pullByte() & 0xfe) >> 1);
-    return tc;
-}
-
-void ElementaryStream::updatePts(uint64_t pts)
-{
-    if (_dts > 0 && pts > _dts)
-    {
-        _frameLength = pts - _dts;
-    }
-    _dts = pts;
-    if (pts > _lastPts)
-        _lastPts = pts;
-    if (!_firstPts)
-        _firstPts = pts;
-}
-
-void ElementaryStream::updatePtsDts(uint64_t pts, uint64_t dts)
-{
-    if (_dts > 0 && dts > _dts)
-    {
-        _frameLength = dts - _dts;
-    }
-    _dts = dts;
-    if (pts > _lastPts)
-        _lastPts = pts;
-    if (!_firstDts)
-        _firstDts = dts;
-}
-
-#if CINEK_AVLIB_IOSTREAMS
-std::basic_ostream<char>& ElementaryStream::write(std::basic_ostream<char>& ostr) const
-{
-    auto buffer = _head;
-    while (buffer)
-    {
-        ostr.write((char*)buffer->buffer.head(), buffer->buffer.available());
-        buffer = buffer->next;
-    }
-    return ostr;
-}
-#endif
-
-////////////////////////////////////////////////////////////////////////////////
-
-Program::Program() :
-    _id(0xffff),
-    _tail(nullptr)
-{
-}
-
-Program::Program(uint16_t id) :
-    _id(id),
-    _tail(nullptr)
-{
-}
-
-Program::Program(Program&& other) :
-    _id(other._id),
-    _tail(other._tail)
-{
-    other._id = 0xffff;
-    other._tail = nullptr;
-}
-
-Program::~Program()
-{
-    while (_tail)
-    {
-        auto prev = _tail->_prev;
-        Memory::destroy(_tail);
-        _tail = prev;
-    }
-}
-
-Program& Program::operator=(Program&& other)
-{
-    _id = other._id;
-    _tail = other._tail;
-    other._id = 0xffff;
-    other._tail = nullptr;
-    return *this;
-}
-
-ElementaryStream* Program::appendStream
-(
-    ElementaryStream::Type type,
-    uint16_t index
-)
-{
-    auto prev = _tail;
-    _tail = Memory::create<ElementaryStream>(type, index);
-    _tail->_prev = prev;
-    return _tail;
-}
-
-ElementaryStream* Program::findStream(uint16_t index)
-{
-    auto stream = _tail;
-    while (stream)
-    {
-        if (stream->index() == index)
-            return stream;
-        stream = stream->_prev;
-    }
-    return nullptr;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 struct Demuxer::BufferNode
@@ -370,6 +53,7 @@ struct Demuxer::BufferNode
     {
         struct
         {
+            uint16_t progId;
             uint8_t tableId;
             bool hasSectionSyntax;
         }
@@ -377,13 +61,23 @@ struct Demuxer::BufferNode
         struct
         {
             uint16_t progId;    // program id that owns the stream
+            uint16_t hdrFlags;  // PES packet header flags.
             uint8_t index;      // stream index within a Program
         }
         es;
     };
 };
 
-Demuxer::Demuxer() :
+Demuxer::Demuxer(const CreateStreamFn& createStreamFn,
+                 const GetStreamFn& getStreamFn,
+                 const FinalizeStreamFn& finalStreamFn,
+                 const OverflowStreamFn& overflowStreamFn,
+                 const Memory& memory) :
+    _memory(memory),
+    _createStreamFn(createStreamFn),
+    _getStreamFn(getStreamFn),
+    _finalStreamFn(finalStreamFn),
+    _overflowStreamFn(overflowStreamFn),
     _headBuffer(nullptr)
 {
     reset();
@@ -397,9 +91,35 @@ Demuxer::~Demuxer()
 #if CINEK_AVLIB_IOSTREAMS
 auto Demuxer::read(std::basic_istream<char> &istr) -> Result
 {
-    //  with streaming, we need to manage our own buffer instead of relying
+    return readInternal(
+        [&istr](Buffer& target) -> int {
+            return target.pushBytesFromStream(istr, kDefaultPacketSize);
+        });
+}
+#endif
+
+auto Demuxer::read(Buffer& in) -> Result
+{
+    return readInternal(
+        [&in](Buffer& target) -> int {
+            int cnt = -1;
+            target.pullBytesFrom(in, kDefaultPacketSize, &cnt);
+            return cnt;
+        });
+}
+
+auto Demuxer::readInternal(const std::function<int(Buffer&)>& inFn) -> Result
+{
+ //  with streaming, we need to manage our own buffer instead of relying
     //  on an application supplied buffer
-    _buffer = std::move(Buffer(kDefaultPacketSize));
+    if (_buffer.capacity() < kDefaultPacketSize)
+    {
+        _buffer = Buffer(kDefaultPacketSize, _memory);
+    }
+    else
+    {
+        _buffer.reset();
+    }
 
     if (!_buffer)
         return kOutOfMemory;
@@ -412,11 +132,10 @@ auto Demuxer::read(std::basic_istream<char> &istr) -> Result
     while (result == kContinue)
     {
         _buffer.reset();
-        
-        printf("Pos Start: %u\n", (uint32_t)istr.tellg());
 
         //  read a single minimum-sized ts packet
-        int cnt = _buffer.pushBytesFromStream(istr, kDefaultPacketSize);
+        int cnt = inFn(_buffer);
+
         if (cnt == 0)
         {
             result = kComplete;
@@ -433,25 +152,37 @@ auto Demuxer::read(std::basic_istream<char> &istr) -> Result
         {
             result = parsePacket();
         }
-        
-        printf("Pos End: %u\n", (uint32_t)istr.tellg());
     }
 
-    _buffer = std::move(Buffer());
+    if (result == kComplete)
+    {
+        finalizeStreams();
+    }
 
     return result;
 }
-#endif
+
+void Demuxer::finalizeStreams()
+{
+    auto bufferNode = _headBuffer;
+    while (bufferNode)
+    {
+        if (bufferNode->type == BufferNode::kPES)
+        {
+            _finalStreamFn(bufferNode->es.progId, bufferNode->es.index);
+        }
+        bufferNode = bufferNode->next;
+    }  
+}
 
 void Demuxer::reset()
 {
     _syncCnt = 0;
     _skipCnt = 0;
-    _programs.clear();
     while (_headBuffer)
     {
         BufferNode* next = _headBuffer->next;
-        Memory::destroy(_headBuffer);
+        _memory.destroy(_headBuffer);
         _headBuffer = next;
     }
 }
@@ -486,7 +217,7 @@ auto Demuxer::parsePacket() -> Result
 
     bool adaptationFieldExists = byte & 0x20;
     bool hasPayload = byte & 0x10;
-    int continuityCounter = byte & 0x0f;
+    //int continuityCounter = byte & 0x0f;
 
     if (pid == kPID_Null || !hasPayload)
     {
@@ -520,7 +251,7 @@ auto Demuxer::parsePacket() -> Result
 
 auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
 {
-    int payloadSize = _buffer.available();
+    int payloadSize = _buffer.size();
     if (start)
     {
         //  the pointer field used to offset the start of our table data, or 0.
@@ -542,7 +273,7 @@ auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
         pidBuffer.type = BufferNode::kPSI;
         pidBuffer.psi.tableId = tableId;
         pidBuffer.psi.hasSectionSyntax = hasSyntaxSection;
-        pidBuffer.buffer = std::move(Buffer(sectionLength));
+        pidBuffer.buffer = Buffer(sectionLength, _memory);
 
         if (!pidBuffer.buffer)
             return kOutOfMemory;
@@ -551,14 +282,14 @@ auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
     if (!pidBuffer.buffer)
         return kInternalError;
 
-    if (payloadSize > pidBuffer.buffer.writeAvailable())
-        payloadSize = pidBuffer.buffer.writeAvailable();
+    if (payloadSize > pidBuffer.buffer.available())
+        payloadSize = pidBuffer.buffer.available();
     int pulled = 0;
-    _buffer.pullBytesInto(pidBuffer.buffer, payloadSize, &pulled);
+    pidBuffer.buffer.pullBytesFrom(_buffer, payloadSize, &pulled);
     if (pulled != payloadSize)
         return kInternalError;
 
-    if (pidBuffer.buffer.writeAvailable())
+    if (pidBuffer.buffer.available())
         return kContinue;   // expecting more data
     
     if (pidBuffer.psi.hasSectionSyntax)
@@ -582,8 +313,7 @@ auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
         case kPAT_Program_Assoc_Table:
             {
                 //  4 byte PAT entry
-                int numPrograms = (buffer.available() - 4) / 4;
-                _programs.reserve(numPrograms);
+                int numPrograms = (buffer.size() - 4) / 4;
                 for (int i = 0; i < numPrograms && parseResult == kContinue; ++i)
                 {
                     parseResult = parseSectionPAT(pidBuffer);
@@ -600,7 +330,7 @@ auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
             break;
         }
    
-        assert(buffer.available() == 4);
+        assert(buffer.size() == 4);
         //uint32_t crc32 = buffer.pullUInt32();
         buffer.skip(4); // todo: CRC check?
     }
@@ -628,9 +358,11 @@ Demuxer::Result Demuxer::parseSectionPAT
     BufferNode* pmtBuffer = createOrFindBuffer(progPid);
     if (!pmtBuffer)
         return kOutOfMemory;
+
     pmtBuffer->type = BufferNode::kPSI;
-    
-    _programs.emplace_back(progNum);
+    pmtBuffer->psi.progId = progNum;
+    pmtBuffer->psi.tableId = 0;
+    pmtBuffer->psi.hasSectionSyntax = false;
     
     return kContinue;
 }
@@ -640,14 +372,7 @@ Demuxer::Result Demuxer::parseSectionPMT
     BufferNode& bufferNode,
     uint16_t programId
 )
-{
-    auto it = std::find_if(_programs.begin(), _programs.end(),
-        [&programId](const Program& p) -> bool { return p.id() == programId; });
-    if (it == _programs.end())
-        return kInvalidPacket;
-    
-    Program& program = (*it);
-    
+{ 
     Buffer& buffer = bufferNode.buffer;
     //  register programs
     uint16_t pidPCR = buffer.pullUInt16();
@@ -662,8 +387,7 @@ Demuxer::Result Demuxer::parseSectionPMT
     buffer.skip(progInfoLength);
     
     //  parse elementary stream info
-    uint16_t esIndex = 0;
-    while (buffer.available() > 4)  // 4bytes, account for trailing crc32
+    while (buffer.size() > 4)  // 4bytes, account for trailing crc32
     {
         uint8_t streamType = buffer.pullByte();
         uint16_t pidStream = buffer.pullUInt16();
@@ -683,23 +407,27 @@ Demuxer::Result Demuxer::parseSectionPMT
             BufferNode* streamBuffer = createOrFindBuffer(pidStream);
             if (!streamBuffer)
                 return kInvalidPacket;
-            streamBuffer->type = BufferNode::kPES;
-            streamBuffer->es.progId = programId;
-            streamBuffer->es.index = ++esIndex;
-            ElementaryStream* stream = program.findStream(streamBuffer->es.index);
+            if (streamBuffer->type == BufferNode::kNull)
+            {
+                streamBuffer->type = BufferNode::kPES;
+                streamBuffer->es.progId = programId;
+                streamBuffer->es.hdrFlags = 0;
+                streamBuffer->es.index = 0;
+            }
+            ElementaryStream* stream = _getStreamFn(streamBuffer->es.progId,
+                streamBuffer->es.index);
             if (!stream)
             {
-                stream = program.appendStream(
-                    (ElementaryStream::Type)streamType,
-                    streamBuffer->es.index
-                );
+                stream = _createStreamFn((ElementaryStream::Type)streamType,
+                    streamBuffer->es.progId);
             }
             if (!stream)
                 return kOutOfMemory;
+            streamBuffer->es.index = stream->index();
         }
     }
     
-    return buffer.available() == 4 ? kContinue :kInvalidPacket;
+    return buffer.size() == 4 ? kContinue :kInvalidPacket;
 }
 
 auto Demuxer::parsePayloadPES
@@ -708,25 +436,104 @@ auto Demuxer::parsePayloadPES
     bool start
 ) -> Demuxer::Result
 {
-    auto it = std::find_if(_programs.begin(), _programs.end(),
-        [&bufferNode](const Program& p) -> bool {
-            return p.id() == bufferNode.es.progId;
-        });
-    if (it == _programs.end())
-        return kInternalError;
-    
-    Program& program = (*it);
-    ElementaryStream* stream = program.findStream(bufferNode.es.index);
+    ElementaryStream* stream = _getStreamFn(bufferNode.es.progId, bufferNode.es.index);
     if (!stream)
-        return kInternalError;
-    
-    int32_t result = stream->parseHeader(_buffer, start);
-    if (result < 0)
-        return kInvalidPacket;
-    if (result > 0)
         return kContinue;
+
+    auto& header = bufferNode.buffer;
+    bool frameBegin = start;
+
+    if (start)
+    {
+        //  parse the PES header
+        //  note, the optional pes header is not available for stream IDs
+        //  0xbe and 0xbf (and possibly more??)
+        //  0xbe = Padding stream
+        //  0xbf = Private stream 2
+        //  http://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+        uint32_t startCode = _buffer.pullUInt32();
+        if ((startCode & 0xffffff00) != 0x00000100)
+            return kInvalidPacket;
+        uint8_t streamId = (uint8_t)(startCode & 0x000000ff);
+        stream->updateStreamId(streamId);
+        _buffer.skip(2);         // PES Packet Length (needed?)
+        if (streamId != 0xbe && streamId != 0xbf)
+        {
+            //  parse the optional header
+            uint16_t headerFlags = _buffer.pullUInt16();
+            
+            if ((headerFlags & 0xc000) != 0x8000)
+                return kInvalidPacket;
+            if ((headerFlags & 0x3000) != 0x0000)
+                return kInvalidPacket;
+
+            bufferNode.es.hdrFlags = headerFlags;
+            
+            uint32_t hdrLen = _buffer.pullByte();
+            if (hdrLen > 0)
+            {
+                if (header.capacity() < hdrLen)
+                {
+                    header = Buffer(hdrLen, _memory);
+                }
+                else
+                {
+                    header.reset();
+                }
+            }
+        }
+    }
+
+    uint32_t hdrLen = header.available();
+    if (hdrLen)
+    {
+        frameBegin = true;
+        if (hdrLen > _buffer.size())
+            hdrLen = _buffer.size();
+        header.pullBytesFrom(_buffer, hdrLen, nullptr);
+        hdrLen = header.available();
     
-    stream->appendFrame(_buffer, _buffer.available());
+        //  header completely read from our input buffer?
+        if (hdrLen == 0)
+        {
+            //  header to parse
+            
+            if ((bufferNode.es.hdrFlags & 0x00c0) == 0x0080)
+            {
+                // parse pts
+                stream->updatePts(pullTimecodeFromBuffer(header));
+                
+            }
+            else if ((bufferNode.es.hdrFlags & 0x00c0) == 0x00c0)
+            {
+                // parse pts, dts
+                stream->updatePtsDts
+                (
+                    pullTimecodeFromBuffer(header),
+                    pullTimecodeFromBuffer(header)
+                );
+            }
+        }
+        else
+        {
+            return kContinue;
+        }
+    }
+
+    uint32_t overflow = stream->appendPayload(_buffer, _buffer.size(), frameBegin);
+    if (overflow)
+    {
+        //  allow the caller to give us a valid stream to read back into in the
+        //  case of an overflow.  failing that, then report an overflow error.
+        stream = _overflowStreamFn(bufferNode.es.progId, bufferNode.es.index,
+                                   overflow);
+        if (stream)
+        {
+            overflow = stream->appendPayload(_buffer, _buffer.size(), frameBegin);
+        }
+        if (overflow || !stream)
+            return kStreamOverflow;
+    }
     
     return kContinue;
 }
@@ -737,7 +544,7 @@ auto Demuxer::createOrFindBuffer(uint16_t pid) -> Demuxer::BufferNode*
     BufferNode* pidNode = nullptr;
     if (!_headBuffer || pid < _headBuffer->pid)
     {
-        _headBuffer = Memory::create<BufferNode>(pid, _headBuffer);
+        _headBuffer = _memory.create<BufferNode>(pid, _headBuffer);
         pidNode = _headBuffer;
     }
     else
@@ -754,12 +561,22 @@ auto Demuxer::createOrFindBuffer(uint16_t pid) -> Demuxer::BufferNode*
         
         if (pid != node->pid)
         {
-            node->next = Memory::create<BufferNode>(pid, next);
+            node->next = _memory.create<BufferNode>(pid, next);
             node = node->next;
         }
         pidNode = node;
     }
     return pidNode;
+}
+
+uint64_t Demuxer::pullTimecodeFromBuffer(Buffer& buffer)
+{
+    uint64_t tc = buffer.pullByte() << 29;
+    tc |= (buffer.pullByte() << 22);
+    tc |= ((buffer.pullByte() & 0xfe) << 14);
+    tc |= (buffer.pullByte()) << 7;
+    tc |= ((buffer.pullByte() & 0xfe) >> 1);
+    return tc;
 }
 
 }   /* namespace mpegts */ } /* namespace ckavlib */

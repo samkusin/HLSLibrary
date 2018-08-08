@@ -186,7 +186,7 @@ auto HLSMasterPlaylist::addStream
     //  sort?  criterion?
     _playlists.emplace_back();
     _playlists.back().info = info;
-    _playlists.back().playlist = std::move(HLSPlaylist(uri, _memory));
+    _playlists.back().playlist = HLSPlaylist(uri, _memory);
     return &_playlists.back();
 }
 

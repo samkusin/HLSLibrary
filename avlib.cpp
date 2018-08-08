@@ -13,12 +13,12 @@
 
 namespace cinekav {
 
-static void* DefaultMalloc(void*, size_t sz)
+static void* DefaultMalloc(void*, int, size_t sz)
 {
     return malloc(sz);
 }
 
-static void DefaultFree(void*, void* ptr)
+static void DefaultFree(void*, int, void* ptr)
 {
     free(ptr);
 }
@@ -29,12 +29,12 @@ static void* gMemoryContext = nullptr;
 
 void* Memory::allocate(size_t sz)
 {
-    return gAllocFn(gMemoryContext, sz);
+    return gAllocFn(gMemoryContext, _region, sz);
 }
 
 void Memory::free(void* ptr)
 {
-    gFreeFn(gMemoryContext, ptr);
+    gFreeFn(gMemoryContext, _region, ptr);
 }
 
 void initialize(AllocFn allocFn, FreeFn freeFn, void* context)
@@ -46,7 +46,8 @@ void initialize(AllocFn allocFn, FreeFn freeFn, void* context)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Buffer::Buffer() :
+Buffer::Buffer(const Memory& memory) :
+    _memory(memory),
     _buffer(nullptr),
     _head(nullptr),
     _tail(nullptr),
@@ -56,7 +57,8 @@ Buffer::Buffer() :
 {
 }
 
-Buffer::Buffer(int sz) :
+Buffer::Buffer(int sz, const Memory& memory) :
+    _memory(memory),
     _buffer(nullptr),
     _head(nullptr),
     _tail(nullptr),
@@ -66,7 +68,7 @@ Buffer::Buffer(int sz) :
 {
     if (_owned)
     {
-        _buffer = reinterpret_cast<uint8_t*>(Memory::allocate(sz));
+        _buffer = reinterpret_cast<uint8_t*>(_memory.allocate(sz));
         if (_buffer)
         {
             _limit = _buffer + sz;
@@ -86,16 +88,27 @@ Buffer::Buffer(uint8_t* buffer, int sz) :
 {
 }
 
+Buffer::Buffer(uint8_t* buffer, int sz, int limit) :
+    _buffer(buffer),
+    _head(_buffer),
+    _tail(_buffer + sz),
+    _limit(_buffer + (sz > limit ? sz : limit)),
+    _overflow(false),
+    _owned(false)
+{
+}
+
 Buffer::~Buffer()
 {
     if (_owned)
     {
-        Memory::free(_buffer);
+        _memory.free(_buffer);
         _buffer = nullptr;
     }
 }
 
 Buffer::Buffer(Buffer&& other) :
+    _buffer(other._buffer),
     _head(other._head),
     _tail(other._tail),
     _limit(other._limit),
@@ -114,7 +127,7 @@ Buffer& Buffer::operator=(Buffer&& other)
 {
     if (_owned && _buffer)
     {
-        Memory::free(_buffer);
+        _memory.free(_buffer);
     }
     _buffer = other._buffer;
     _head = other._head;
@@ -138,33 +151,22 @@ void Buffer::reset()
     _head = _tail = _buffer;
 }
 
-Buffer Buffer::mapBuffer(int head, int tail) const
-{
-    if (tail > _limit - _tail)
-        tail = _limit - _tail;
-    if (head > tail)
-        head = tail;
-    if (!_head)
-    {
-        head = tail = 0;
-    }
-    return Buffer(_head + head, tail - head);
-}
 
 int Buffer::pushBytes(const uint8_t* bytes, int cnt)
 {
-    if (writeAvailable() < cnt)
-        cnt = writeAvailable();
+    if (available() < cnt)
+        cnt = available();
 
     memcpy(_tail, bytes, cnt);
     _tail += cnt;
     return cnt;
 }
 
+#if CINEK_AVLIB_IOSTREAMS
 int Buffer::pushBytesFromStream(std::basic_istream<char>& istr, int cnt)
 {
-    if (writeAvailable() < cnt)
-        cnt = writeAvailable();
+    if (available() < cnt)
+        cnt = available();
 
     istr.read((char*)_tail, cnt);
     if (istr.eof())
@@ -178,20 +180,21 @@ int Buffer::pushBytesFromStream(std::basic_istream<char>& istr, int cnt)
     _tail += cnt;
     return cnt;
 }
+#endif
 
-Buffer& Buffer::pullBytesInto(Buffer& target, int cnt, int* pulled)
+Buffer& Buffer::pullBytesFrom(Buffer& source, int cnt, int* pulled)
 {
     //  clip cnt to the intersection of this buffer and the target's.
-    if (cnt > available())
+    if (cnt > source.size())
+        cnt = source.size();
+    if (available() < cnt)
         cnt = available();
-    if (target.writeAvailable() < cnt)
-        cnt = target.writeAvailable();
 
     if (cnt > 0)
     {
-        memcpy(target._tail, _head, cnt);
-        target._tail += cnt;
-        _head += cnt;
+        memcpy(_tail, source._head, cnt);
+        _tail += cnt;
+        source._head += cnt;
     }
     if (pulled)
     {
@@ -199,5 +202,64 @@ Buffer& Buffer::pullBytesInto(Buffer& target, int cnt, int* pulled)
     }
     return *this;
 }
+
+//  Generates a subuffer from the available space of the owning buffer.
+//  This is a buffer composed of [tail+offset, tail+offset+sz]
+//  If either the buffer offset or size result in a buffer falling outside
+//  this buffer's memory region, the returned buffer will reflect the
+//  difference
+Buffer Buffer::createSubBuffer(int offset, int sz)
+{
+    uint8_t* buffer = _tail + offset;
+    if (buffer > _limit)
+        return Buffer(_limit, 0);
+    if (buffer + sz > _limit)
+        sz = _limit - buffer;
+
+    return Buffer(buffer, 0, sz);
+}
+
+Buffer Buffer::createSubBufferFromUsed()
+{
+    return Buffer(_head, _tail - _head);
+}
+
+StringBuffer::StringBuffer()
+{
+}
+
+StringBuffer::StringBuffer(int sz, const Memory& memory) :
+    _buffer(sz, memory)
+{
+}
+
+StringBuffer::StringBuffer(Buffer&& buffer) :
+    _buffer(std::move(buffer))
+{
+}
+
+
+//  skips null characters if delim != 0.
+//  else terminates on delim or end of buffer.
+StringBuffer& StringBuffer::getline(std::string& str, char delim)
+{
+    str.clear();
+    while (!_buffer.empty())
+    {
+        char ch = (char)_buffer.pullByte();
+        if (ch == delim)
+            break;
+        str.push_back(ch);
+    }
+
+    return *this;
+}
+
+bool StringBuffer::end() const
+{
+    return _buffer.empty();
+}
+
+
 
 } /* namespace ckavlib */
