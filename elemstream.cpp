@@ -110,7 +110,7 @@ void ElementaryStream::freeESAUBatches()
     _ESAccessUnitCount = 0;
 }
 
-uint32_t ElementaryStream::appendPayload(Buffer& source, uint32_t len, bool pesStart)
+size_t ElementaryStream::appendPayload(Buffer& source, size_t len, bool pesStart)
 {
     if (len > _buffer.available())
     {
@@ -126,12 +126,12 @@ uint32_t ElementaryStream::appendPayload(Buffer& source, uint32_t len, bool pesS
         _parser.auStart = nullptr;
         _parser.VCLcheck = false;
     }
-    
+
     //  len will be zero if there is no tail buffer.
     if (len == 0)
         return len;
-    
-    int pulled = 0;
+
+    size_t pulled = 0;
     _buffer.pullBytesFrom(source, len, &pulled);
     len -= pulled;
     assert(len == 0);   // first length check should've prevented this
@@ -140,13 +140,13 @@ uint32_t ElementaryStream::appendPayload(Buffer& source, uint32_t len, bool pesS
     _parser.tail = _buffer.tail();
 
     //  Parse from our current head to tail for access units.  We parse during
-    //  buffer generation so we can assign the current dts/pts markers to 
+    //  buffer generation so we can assign the current dts/pts markers to
     //  frames.
     if (_type == kVideo_H264)
     {
         parseH264Stream();
     }
-   
+
     return len;
 }
 
@@ -245,7 +245,7 @@ void ElementaryStream::parseH264Stream()
             {
                 if (_parser.VCLcheck)
                 {
-                    if (NALType < 0x06)             // VCL 
+                    if (NALType < 0x06)             // VCL
                     {
                         _parser.VCLcheck = false;
                     }
@@ -293,7 +293,7 @@ void ElementaryStream::parseH264Stream()
         else
         {
             //  either outside or inside a NAL unit
-            ++_parser.head;                        
+            ++_parser.head;
         }
     }
 }

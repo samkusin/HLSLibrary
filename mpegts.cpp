@@ -48,7 +48,7 @@ struct Demuxer::BufferNode
     uint16_t pid;
     BufferNode* next;
     enum { kNull, kPSI, kPES } type;
-    
+
     union
     {
         struct
@@ -92,7 +92,7 @@ Demuxer::~Demuxer()
 auto Demuxer::read(std::basic_istream<char> &istr) -> Result
 {
     return readInternal(
-        [&istr](Buffer& target) -> int {
+        [&istr](Buffer& target) -> size_t {
             return target.pushBytesFromStream(istr, kDefaultPacketSize);
         });
 }
@@ -101,14 +101,14 @@ auto Demuxer::read(std::basic_istream<char> &istr) -> Result
 auto Demuxer::read(Buffer& in) -> Result
 {
     return readInternal(
-        [&in](Buffer& target) -> int {
-            int cnt = -1;
+        [&in](Buffer& target) -> size_t {
+            size_t cnt = 0;
             target.pullBytesFrom(in, kDefaultPacketSize, &cnt);
             return cnt;
         });
 }
 
-auto Demuxer::readInternal(const std::function<int(Buffer&)>& inFn) -> Result
+auto Demuxer::readInternal(const std::function<size_t(Buffer&)>& inFn) -> Result
 {
  //  with streaming, we need to manage our own buffer instead of relying
     //  on an application supplied buffer
@@ -134,13 +134,13 @@ auto Demuxer::readInternal(const std::function<int(Buffer&)>& inFn) -> Result
         _buffer.reset();
 
         //  read a single minimum-sized ts packet
-        int cnt = inFn(_buffer);
+        auto cnt = inFn(_buffer);
 
         if (cnt == 0)
         {
             result = kComplete;
         }
-        else if (cnt < 0)
+        else if (cnt == SIZE_MAX)
         {
             result = kIOError;
         }
@@ -172,7 +172,7 @@ void Demuxer::finalizeStreams()
             _finalStreamFn(bufferNode->es.progId, bufferNode->es.index);
         }
         bufferNode = bufferNode->next;
-    }  
+    }
 }
 
 void Demuxer::reset()
@@ -236,7 +236,7 @@ auto Demuxer::parsePacket() -> Result
     BufferNode* pidNode = createOrFindBuffer(pid);
     if (!pidNode)
         return kOutOfMemory;
-    
+
     if (pidNode->pid == kPID_PAT || pidNode->type == BufferNode::kPSI)
     {
         return parsePayloadPSI(*pidNode, payloadUnitStart);
@@ -251,7 +251,7 @@ auto Demuxer::parsePacket() -> Result
 
 auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
 {
-    int payloadSize = _buffer.size();
+    auto payloadSize = _buffer.size();
     if (start)
     {
         //  the pointer field used to offset the start of our table data, or 0.
@@ -269,7 +269,7 @@ auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
         //  obtain the table's syntax section for PAT and PMT sections.
         bool hasSyntaxSection = sectionHeader & 0x8000;
         uint16_t sectionLength = sectionHeader & 0x03ff;
-        
+
         pidBuffer.type = BufferNode::kPSI;
         pidBuffer.psi.tableId = tableId;
         pidBuffer.psi.hasSectionSyntax = hasSyntaxSection;
@@ -284,14 +284,14 @@ auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
 
     if (payloadSize > pidBuffer.buffer.available())
         payloadSize = pidBuffer.buffer.available();
-    int pulled = 0;
+    size_t pulled = 0;
     pidBuffer.buffer.pullBytesFrom(_buffer, payloadSize, &pulled);
     if (pulled != payloadSize)
         return kInternalError;
 
     if (pidBuffer.buffer.available())
         return kContinue;   // expecting more data
-    
+
     if (pidBuffer.psi.hasSectionSyntax)
     {
         // iterate through all table entries
@@ -305,16 +305,16 @@ auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
         //uint8_t sectionStart = buffer.pullByte();
         //uint8_t sectionEnd = buffer.pullByte();
         buffer.skip(2);
-        
+
         Result parseResult = kContinue;
-        
+
         switch (pidBuffer.psi.tableId)
         {
         case kPAT_Program_Assoc_Table:
             {
                 //  4 byte PAT entry
-                int numPrograms = (buffer.size() - 4) / 4;
-                for (int i = 0; i < numPrograms && parseResult == kContinue; ++i)
+                size_t numPrograms = (buffer.size() - 4) / 4;
+                for (size_t i = 0; i < numPrograms && parseResult == kContinue; ++i)
                 {
                     parseResult = parseSectionPAT(pidBuffer);
                 }
@@ -329,7 +329,7 @@ auto Demuxer::parsePayloadPSI(BufferNode& pidBuffer, bool start) -> Result
             parseResult = kUnsupportedTable;
             break;
         }
-   
+
         assert(buffer.size() == 4);
         //uint32_t crc32 = buffer.pullUInt32();
         buffer.skip(4); // todo: CRC check?
@@ -352,7 +352,7 @@ Demuxer::Result Demuxer::parseSectionPAT
     uint16_t progPid = bufferNode.buffer.pullUInt16();
     if ((progPid & 0xe000) != 0xe000)
         return kInvalidPacket;
-    
+
     //  create a PSI buffer for our PMT
     progPid &= 0x1fff;
     BufferNode* pmtBuffer = createOrFindBuffer(progPid);
@@ -363,7 +363,7 @@ Demuxer::Result Demuxer::parseSectionPAT
     pmtBuffer->psi.progId = progNum;
     pmtBuffer->psi.tableId = 0;
     pmtBuffer->psi.hasSectionSyntax = false;
-    
+
     return kContinue;
 }
 
@@ -372,7 +372,7 @@ Demuxer::Result Demuxer::parseSectionPMT
     BufferNode& bufferNode,
     uint16_t programId
 )
-{ 
+{
     Buffer& buffer = bufferNode.buffer;
     //  register programs
     uint16_t pidPCR = buffer.pullUInt16();
@@ -382,10 +382,10 @@ Demuxer::Result Demuxer::parseSectionPMT
     if ((progInfoLength & 0xf000) != 0xf000)
         return kInvalidPacket;
     progInfoLength &= (0x03ff);
-    
+
     //  todo: program descriptor parsing?
     buffer.skip(progInfoLength);
-    
+
     //  parse elementary stream info
     while (buffer.size() > 4)  // 4bytes, account for trailing crc32
     {
@@ -393,13 +393,13 @@ Demuxer::Result Demuxer::parseSectionPMT
         uint16_t pidStream = buffer.pullUInt16();
         if ((pidStream & 0xe000)!=0xe000)
             return kInvalidPacket;
-        
+
         pidStream &= 0x1fff;
-        
+
         //  todo: ES descriptor bytes - skip for now.
         uint16_t esDescLen = buffer.pullUInt16() & 0x03ff;
         buffer.skip(esDescLen);
-        
+
         uint8_t validStreamType =
             kSupportedStreamFormats[(streamType & 0xf0)>>4][(streamType & 0x0f)];
         if (validStreamType)
@@ -426,7 +426,7 @@ Demuxer::Result Demuxer::parseSectionPMT
             streamBuffer->es.index = stream->index();
         }
     }
-    
+
     return buffer.size() == 4 ? kContinue :kInvalidPacket;
 }
 
@@ -461,14 +461,14 @@ auto Demuxer::parsePayloadPES
         {
             //  parse the optional header
             uint16_t headerFlags = _buffer.pullUInt16();
-            
+
             if ((headerFlags & 0xc000) != 0x8000)
                 return kInvalidPacket;
             if ((headerFlags & 0x3000) != 0x0000)
                 return kInvalidPacket;
 
             bufferNode.es.hdrFlags = headerFlags;
-            
+
             uint32_t hdrLen = _buffer.pullByte();
             if (hdrLen > 0)
             {
@@ -484,7 +484,7 @@ auto Demuxer::parsePayloadPES
         }
     }
 
-    uint32_t hdrLen = header.available();
+    auto hdrLen = header.available();
     if (hdrLen)
     {
         frameBegin = true;
@@ -492,17 +492,17 @@ auto Demuxer::parsePayloadPES
             hdrLen = _buffer.size();
         header.pullBytesFrom(_buffer, hdrLen, nullptr);
         hdrLen = header.available();
-    
+
         //  header completely read from our input buffer?
         if (hdrLen == 0)
         {
             //  header to parse
-            
+
             if ((bufferNode.es.hdrFlags & 0x00c0) == 0x0080)
             {
                 // parse pts
                 stream->updatePts(pullTimecodeFromBuffer(header));
-                
+
             }
             else if ((bufferNode.es.hdrFlags & 0x00c0) == 0x00c0)
             {
@@ -520,7 +520,7 @@ auto Demuxer::parsePayloadPES
         }
     }
 
-    uint32_t overflow = stream->appendPayload(_buffer, _buffer.size(), frameBegin);
+    auto overflow = stream->appendPayload(_buffer, _buffer.size(), frameBegin);
     if (overflow)
     {
         //  allow the caller to give us a valid stream to read back into in the
@@ -534,7 +534,7 @@ auto Demuxer::parsePayloadPES
         if (overflow || !stream)
             return kStreamOverflow;
     }
-    
+
     return kContinue;
 }
 
@@ -558,7 +558,7 @@ auto Demuxer::createOrFindBuffer(uint16_t pid) -> Demuxer::BufferNode*
             node = next;
             next = node->next;
         }
-        
+
         if (pid != node->pid)
         {
             node->next = _memory.create<BufferNode>(pid, next);

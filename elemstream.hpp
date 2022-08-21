@@ -25,7 +25,7 @@ namespace cinekav {
         uint64_t pts;
         uint64_t dts;
     };
-    
+
     class ElementaryStream
     {
     public:
@@ -35,7 +35,7 @@ namespace cinekav {
             kAudio_AAC          = 0x0f,
             kVideo_H264         = 0x1b
         };
-        
+
         ElementaryStream();
         ElementaryStream(Buffer&& buffer, Type type, uint16_t progId, uint8_t index,
                          const Memory& memory=Memory());
@@ -43,7 +43,7 @@ namespace cinekav {
         ElementaryStream& operator=(ElementaryStream&& other);
 
         ~ElementaryStream();
-        
+
         operator bool() const { return _type != kNull; }
 
         Type type() const { return _type; }
@@ -51,20 +51,20 @@ namespace cinekav {
         uint8_t index() const { return _index; }
 
         const Buffer& buffer() const { return _buffer; }
-    
-        uint32_t appendPayload(Buffer& source, uint32_t len, bool pesStart);
-        
+
+        size_t appendPayload(Buffer& source, size_t len, bool pesStart);
+
     #if CINEK_AVLIB_IOSTREAMS
         std::basic_ostream<char>& write(std::basic_ostream<char>& ostr) const;
     #endif
-    
+
         void updateStreamId(uint8_t streamId) { _streamId = streamId; }
         void updatePts(uint64_t pts);
         void updatePtsDts(uint64_t pts, uint64_t dts);
 
         ESAccessUnit* accessUnit(size_t index);
         size_t accessUnitCount() const { return _ESAccessUnitCount; }
-        
+
     private:
         void freeESAUBatches();
 
@@ -90,7 +90,7 @@ namespace cinekav {
             ESAccessUnit* limit;
             ESAccessUnitBatch* nextBatch;
 
-            ESAccessUnitBatch() : 
+            ESAccessUnitBatch() :
                 head(nullptr), tail(nullptr), limit(nullptr),
                 nextBatch(nullptr) {}
 

@@ -33,8 +33,8 @@ namespace cinekav { namespace mpegts {
 
     constexpr uint8_t kPAT_Program_Assoc_Table  = 0x00;
     constexpr uint8_t kPAT_Program_Map_Table    = 0x02;
-    
-    
+
+
     class Demuxer
     {
     public:
@@ -53,22 +53,22 @@ namespace cinekav { namespace mpegts {
             kInternalError          ///< Unknown (internal) error
         };
 
-        using CreateStreamFn = 
+        using CreateStreamFn =
             std::function<cinekav::ElementaryStream*(cinekav::ElementaryStream::Type,
                                             uint16_t programId)>;
-        using GetStreamFn = 
+        using GetStreamFn =
             std::function<cinekav::ElementaryStream*(uint16_t programId,
                                             uint16_t index)>;
         using FinalizeStreamFn =
             std::function<void(uint16_t programId, uint16_t index)>;
 
-        using OverflowStreamFn = 
+        using OverflowStreamFn =
             std::function<cinekav::ElementaryStream*(uint16_t programId,
                                             uint16_t index,
-                                            uint32_t len)>;
+                                            size_t len)>;
 
         Demuxer(const CreateStreamFn& createStreamFn,
-                const GetStreamFn& getStreamFn, 
+                const GetStreamFn& getStreamFn,
                 const FinalizeStreamFn& finalStreamFn,
                 const OverflowStreamFn& overflowStreamFn,
                 const Memory& memory =Memory());
@@ -78,11 +78,11 @@ namespace cinekav { namespace mpegts {
         Result read(std::basic_istream<char>& istr);
     #endif
         Result read(Buffer& buffer);
-    
+
         void reset();
 
     private:
-        Result readInternal(const std::function<int(Buffer&)>& inFn);
+        Result readInternal(const std::function<size_t(Buffer&)>& inFn);
         //  buffer state
         Memory _memory;
         Buffer _buffer;
@@ -96,11 +96,11 @@ namespace cinekav { namespace mpegts {
         struct BufferNode;
 
         BufferNode* _headBuffer;
-        
+
         //  tracks the current state of parsing
         int _syncCnt;
         int _skipCnt;
-        
+
     private:
         Result readInternal();
         void finalizeStreams();
@@ -112,7 +112,7 @@ namespace cinekav { namespace mpegts {
         Result parsePayloadPES(BufferNode& bufferNode, bool start);
 
         uint64_t pullTimecodeFromBuffer(Buffer& buffer);
-        
+
         BufferNode* createOrFindBuffer(uint16_t pid);
     };
 

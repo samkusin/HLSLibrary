@@ -43,12 +43,12 @@ private:
     cinekav::ElementaryStream* createES(cinekav::ElementaryStream::Type,
                                uint16_t programId);
     cinekav::ElementaryStream* getES(uint16_t programId, uint16_t index);
-    
+
     void finalizeES(uint16_t programId, uint16_t index);
 
     cinekav::ElementaryStream* handleOverflowES(uint16_t programId,
                                        uint16_t index,
-                                       uint32_t len);
+                                       size_t len);
 
 private:
     Memory _memory;

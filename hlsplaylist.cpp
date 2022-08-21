@@ -58,12 +58,12 @@ void HLSPlaylist::addSegment(Segment&& segment)
     _segments.emplace_back(std::move(segment));
 }
 
-auto HLSPlaylist::segmentAt(int index) -> Segment*
+auto HLSPlaylist::segmentAt(size_t index) -> Segment*
 {
     return const_cast<Segment*>(static_cast<const HLSPlaylist*>(this)->segmentAt(index));
 }
 
-auto HLSPlaylist::segmentAt(int index) const -> const Segment*
+auto HLSPlaylist::segmentAt(size_t index) const -> const Segment*
 {
     if (index < 0 || index >= _segments.size())
         return nullptr;
@@ -86,7 +86,7 @@ bool HLSPlaylistParser::parse(HLSPlaylist& playlist, const std::string& line)
     if (fpos == std::string::npos || lpos == std::string::npos)
         return true;
     std::string trimmed = line.substr(fpos, (lpos - fpos)+1);
-    
+
     switch (_state)
     {
     case kInit:
@@ -122,12 +122,12 @@ bool HLSPlaylistParser::parse(HLSPlaylist& playlist, const std::string& line)
                         }
                         else if (trimmed.compare(0, paramSize, "#EXT-X-TARGETDURATION")==0)
                         {
-                            playlist._targetDuration = 
+                            playlist._targetDuration =
                                 std::stof(trimmed.substr(valuePos, valueSize));
                         }
                         else if (trimmed.compare(0, paramSize, "#EXT-X-MEDIA-SEQUENCE")==0)
                         {
-                            playlist._seqNo = 
+                            playlist._seqNo =
                                 std::stoi(trimmed.substr(valuePos, valueSize));
                         }
                         else if (trimmed.compare(0, paramSize, "#EXTINF")==0)
@@ -139,7 +139,7 @@ bool HLSPlaylistParser::parse(HLSPlaylist& playlist, const std::string& line)
                             }
                             else
                             {
-                                _info.duration = 
+                                _info.duration =
                                     std::stof(trimmed.substr(valuePos, delim - valuePos));
 
                                 //  determine if our uri is on the same line
@@ -205,7 +205,7 @@ bool HLSMasterPlaylistParser::parse(HLSMasterPlaylist& playlist,
     if (fpos == std::string::npos || lpos == std::string::npos)
         return true;
     std::string trimmed = line.substr(fpos, (lpos - fpos)+1);
-    
+
     switch (_state)
     {
     case kInit:
@@ -244,7 +244,7 @@ bool HLSMasterPlaylistParser::parse(HLSMasterPlaylist& playlist,
                             //  valuePos will be std::string::npos+1, so
                             //  we add a >0 check to rule out valuePos rolling
                             //  over to 0.  valuePos would always start the loop
-                            //  > 0, so this 'hackish' method should work. 
+                            //  > 0, so this 'hackish' method should work.
                             while (valuePos < trimmed.size() && valuePos > 0)
                             {
                                 auto delimPos = trimmed.find_first_of('=', valuePos);

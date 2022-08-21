@@ -35,7 +35,7 @@ public:
         std::string uri;
         float duration;
         Segment() = default;
-        Segment(Segment&& other) : 
+        Segment(Segment&& other) :
             uri(std::move(other.uri)),
             duration(other.duration)
         {
@@ -56,9 +56,9 @@ public:
     HLSPlaylist& operator=(HLSPlaylist&& other);
 
     void addSegment(Segment&& segment);
-    int segmentCount() const { return _segments.size(); }
-    Segment* segmentAt(int index);
-    const Segment* segmentAt(int index) const;
+    size_t segmentCount() const { return _segments.size(); }
+    Segment* segmentAt(size_t index);
+    const Segment* segmentAt(size_t index) const;
     const std::string& uri() const { return _uri; }
 
 private:

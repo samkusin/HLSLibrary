@@ -15,12 +15,12 @@ namespace cinekav {
 
 /**
  *  The HLStream handles playback of a HTTP Live Stream
- *  
+ *
  *  Upon stream construction:
  *  - Set State to ROOTLIST
- *   - LOAD_LIST(URL) and parse to PLAYLIST 
+ *   - LOAD_LIST(URL) and parse to PLAYLIST
  *  - Set State to MEDIALIST
- *   - Select media playlist from PLAYLIST - use mid-range bandwidth stream for 
+ *   - Select media playlist from PLAYLIST - use mid-range bandwidth stream for
  *     now
  *   - LOAD_LIST(root URL + media PL) and parse to MEDIALIST
  *  - Set State to PLAYBACK with current MEDIALIST at start
@@ -69,7 +69,7 @@ HLStream::HLStream
             },
             [this](uint16_t programId,
                    uint16_t index,
-                   uint32_t len)  -> cinekav::ElementaryStream*
+                   size_t len)  -> cinekav::ElementaryStream*
             {
                 return handleOverflowES(programId, index, len);
             },
@@ -81,7 +81,7 @@ HLStream::HLStream
     _videoStreams(_memory)
 {
     _inputRequestHandle = _inputCbs.openCb(url);
-    
+
     //  if the url ends with a filename, strip it out
     auto endpos = _rootUrl.find_last_of('/');
     if (endpos != std::string::npos)
@@ -190,8 +190,8 @@ void HLStream::update()
                     sb.getline(line);
                     parser.parse(_masterPlaylist, line);
                 }
-                
-                
+
+
                 //  now open each stream in the master playlist by
                 //  switch to the kOpenMediaList state.
                 _toParsePlaylist = _masterPlaylist.begin();
@@ -245,7 +245,7 @@ void HLStream::update()
                 }
 
                 _toParsePlaylist->info.available = true;
-                
+
                 //  now open each stream in the master playlist by
                 //  switch to the kOpenMediaList state.
                 ++_toParsePlaylist;
@@ -286,8 +286,8 @@ void HLStream::update()
             //  Streaming Method:
             //      Download current segment media file
             //      Demux media file to our Elementary Streams
-            //      
-            //      
+            //
+            //
             //  Elementary streams derive their Buffers from the application
             //  supplied video and audio buffers.
             //
@@ -299,8 +299,8 @@ void HLStream::update()
             //
             //  For this iteration, we'll attempt double buffering video and
             //  audio.
-            //  
-      
+            //
+
             auto& playlist =  (*_toPlayPlaylist).playlist;
             if (_playlistSegmentIndex < playlist.segmentCount())
             {
@@ -349,7 +349,7 @@ void HLStream::update()
     }
 }
 
-//  obtain encoded data from our current read buffer.  
+//  obtain encoded data from our current read buffer.
 int HLStream::pullEncodedData(ESAccessUnit* vau, ESAccessUnit* aau)
 {
     int res = 0;
@@ -409,25 +409,25 @@ cinekav::ElementaryStream* HLStream::createES
     //  important, since its necessary to double buffer the incoming stream.
     cinekav::ElementaryStream* stream = nullptr;
 
-    //  todo, a lot of repeated code here.   may need to consolidate this 
+    //  todo, a lot of repeated code here.   may need to consolidate this
     //  some into a "stream object"
     switch (type)
     {
     case cinekav::ElementaryStream::kVideo_H264:        // video
-        { 
+        {
             if (_videoESIndex == 0)
                 _videoESIndex = 1;
             uint8_t esIndex = _videoESIndex++;
 
 
             int thisIdx = _videoPos.writeToIdx;
-            const int kBufferSize = _videoBuffer.available()/2;
+            const auto kBufferSize = _videoBuffer.available() / 2;
             Buffer streamBuffer = _videoBuffer.createSubBuffer(
                 thisIdx * kBufferSize,
                 kBufferSize);
             ElementaryStream estream(std::move(streamBuffer), type, programId,
                                         esIndex);
-             
+
             _videoStreams[thisIdx] = std::move(estream);
             stream = &_videoStreams[thisIdx];
         }
@@ -440,13 +440,13 @@ cinekav::ElementaryStream* HLStream::createES
 
 
             int thisIdx = _audioPos.writeToIdx;
-            const int kBufferSize = _audioBuffer.available()/2;
+            const auto kBufferSize = _audioBuffer.available() / 2;
             Buffer streamBuffer = _audioBuffer.createSubBuffer(
                 thisIdx * kBufferSize,
                 kBufferSize);
             ElementaryStream estream(std::move(streamBuffer), type, programId,
                                         esIndex);
-             
+
             _audioStreams[thisIdx] = std::move(estream);
             stream = &_audioStreams[thisIdx];
         }
@@ -483,7 +483,7 @@ cinekav::ElementaryStream* HLStream::getES
     }
     return nullptr;
 }
-    
+
 void HLStream::finalizeES(uint16_t programId, uint16_t index)
 {
     //  advance our stream positions now that this stream's data has been
@@ -504,7 +504,7 @@ void HLStream::finalizeES(uint16_t programId, uint16_t index)
 
 cinekav::ElementaryStream* HLStream::handleOverflowES(uint16_t programId,
                                     uint16_t index,
-                                    uint32_t len)
+                                    size_t len)
 {
     return nullptr;
 }
@@ -529,7 +529,7 @@ bool HLStream::StreamPosition::hasReadSpace() const
     return readFromIdx != writeToIdx;
 }
 
-bool HLStream::StreamPosition::advanceRead() 
+bool HLStream::StreamPosition::advanceRead()
 {
     if (readFromIdx == writeToIdx)
         return false;
@@ -548,7 +548,7 @@ bool HLStream::StreamPosition::advanceWrite()
 {
     writeDoneIdx = writeToIdx;
 
-    int next = (writeToIdx+1) % bufferCnt;    
+    int next = (writeToIdx+1) % bufferCnt;
 
     if (next == readFromIdx)
         return false;
@@ -564,14 +564,14 @@ void HLStream::resetStreams()
 
     _audioESIndex = 0;
     _videoESIndex = 0;
-    
+
     for (int i = 0; i < _bufferCount; ++i)
     {
         _audioStreams[i] = ElementaryStream();
         _videoStreams[i] = ElementaryStream();
     }
 
-   
+
     _playlistSegmentIndex = 0;
 }
 

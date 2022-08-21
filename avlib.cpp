@@ -57,7 +57,7 @@ Buffer::Buffer(const Memory& memory) :
 {
 }
 
-Buffer::Buffer(int sz, const Memory& memory) :
+Buffer::Buffer(size_t sz, const Memory& memory) :
     _memory(memory),
     _buffer(nullptr),
     _head(nullptr),
@@ -78,7 +78,7 @@ Buffer::Buffer(int sz, const Memory& memory) :
     }
 }
 
-Buffer::Buffer(uint8_t* buffer, int sz) :
+Buffer::Buffer(uint8_t* buffer, size_t sz) :
     _buffer(buffer),
     _head(_buffer),
     _tail(_buffer + sz),
@@ -88,7 +88,7 @@ Buffer::Buffer(uint8_t* buffer, int sz) :
 {
 }
 
-Buffer::Buffer(uint8_t* buffer, int sz, int limit) :
+Buffer::Buffer(uint8_t* buffer, size_t sz, size_t limit) :
     _buffer(buffer),
     _head(_buffer),
     _tail(_buffer + sz),
@@ -152,7 +152,7 @@ void Buffer::reset()
 }
 
 
-int Buffer::pushBytes(const uint8_t* bytes, int cnt)
+size_t Buffer::pushBytes(const uint8_t* bytes, size_t cnt)
 {
     if (available() < cnt)
         cnt = available();
@@ -163,7 +163,7 @@ int Buffer::pushBytes(const uint8_t* bytes, int cnt)
 }
 
 #if CINEK_AVLIB_IOSTREAMS
-int Buffer::pushBytesFromStream(std::basic_istream<char>& istr, int cnt)
+size_t Buffer::pushBytesFromStream(std::basic_istream<char>& istr, size_t cnt)
 {
     if (available() < cnt)
         cnt = available();
@@ -175,14 +175,14 @@ int Buffer::pushBytesFromStream(std::basic_istream<char>& istr, int cnt)
     }
     else if (istr.fail())
     {
-        return -1;
+        return SIZE_MAX;
     }
     _tail += cnt;
     return cnt;
 }
 #endif
 
-Buffer& Buffer::pullBytesFrom(Buffer& source, int cnt, int* pulled)
+Buffer& Buffer::pullBytesFrom(Buffer& source, size_t cnt, size_t* pulled)
 {
     //  clip cnt to the intersection of this buffer and the target's.
     if (cnt > source.size())
@@ -208,7 +208,7 @@ Buffer& Buffer::pullBytesFrom(Buffer& source, int cnt, int* pulled)
 //  If either the buffer offset or size result in a buffer falling outside
 //  this buffer's memory region, the returned buffer will reflect the
 //  difference
-Buffer Buffer::createSubBuffer(int offset, int sz)
+Buffer Buffer::createSubBuffer(size_t offset, size_t sz)
 {
     uint8_t* buffer = _tail + offset;
     if (buffer > _limit)
@@ -228,7 +228,7 @@ StringBuffer::StringBuffer()
 {
 }
 
-StringBuffer::StringBuffer(int sz, const Memory& memory) :
+StringBuffer::StringBuffer(size_t sz, const Memory& memory) :
     _buffer(sz, memory)
 {
 }

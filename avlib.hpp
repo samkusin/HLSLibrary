@@ -6,7 +6,7 @@
  *  @license    This project is released under the ISC license.  See LICENSE
  *              for the full text.
  */
- 
+
 #ifndef CINEK_AVLIB_HPP
 #define CINEK_AVLIB_HPP
 
@@ -34,7 +34,7 @@ struct Memory
 
     void* allocate(size_t sz);
     void free(void* ptr);
-    
+
     template<typename T, typename... Args>
     T* create(Args&&... args)
     {
@@ -42,7 +42,7 @@ struct Memory
         ::new(p) T(std::forward<Args>(args)...);
         return p;
     }
-    
+
     template<typename T>
     void destroy(T* ptr)
     {
@@ -68,13 +68,13 @@ inline bool operator!=(const Memory& lha, const Memory& rha)
 
 class StringBuffer;
 
-class Buffer 
+class Buffer
 {
 public:
     Buffer(const Memory& memory=Memory());
-    Buffer(int sz, const Memory& memory=Memory());
-    Buffer(uint8_t* buffer, int sz);
-    Buffer(uint8_t* buffer, int sz, int limit);
+    Buffer(size_t sz, const Memory& memory=Memory());
+    Buffer(uint8_t* buffer, size_t sz);
+    Buffer(uint8_t* buffer, size_t sz, size_t limit);
     ~Buffer();
 
     Buffer(const Buffer& other) = delete;
@@ -82,7 +82,7 @@ public:
 
     Buffer(Buffer&& other);
     Buffer& operator=(Buffer&& other);
-    
+
     operator bool() const {
         return _buffer != nullptr;
     }
@@ -90,14 +90,14 @@ public:
     bool empty() const { return _head == _tail; }
     bool overflow() const { return _overflow; }
 
-    int pushBytes(const uint8_t* bytes, int sz);
+    size_t pushBytes(const uint8_t* bytes, size_t sz);
 
 #if CINEK_AVLIB_IOSTREAMS
-    int pushBytesFromStream(std::basic_istream<char>& istr, int cnt);
+    size_t pushBytesFromStream(std::basic_istream<char>& istr, size_t cnt);
 #endif
     void reset();
 
-    Buffer& pullBytesFrom(Buffer& target, int cnt, int* pulled);
+    Buffer& pullBytesFrom(Buffer& target, size_t cnt, size_t* pulled);
 
     uint8_t pullByte() {
         _overflow = _overflow || (_head == _tail);
@@ -117,22 +117,22 @@ public:
         ui |= pullUInt16();
         return ui;
     }
-    void skip(uint32_t cnt) {
+    void skip(size_t cnt) {
         _head += cnt;
         _overflow = _overflow || (_head > _tail);
         if (_head > _tail)
             _head = _tail;
     }
-    int headAvailable() const {
+    size_t  headAvailable() const {
         return _head - _buffer;
     }
-    int size() const {
+    size_t size() const {
         return _tail - _head;
     }
-    int available() const {
+    size_t available() const {
         return _limit - _tail;
     }
-    int capacity() const {
+    size_t capacity() const {
         return _limit - _buffer;
     }
     const uint8_t* head() const {
@@ -142,7 +142,7 @@ public:
         return _tail;
     }
 
-    uint8_t* obtain(int sz) {
+    uint8_t* obtain(size_t sz) {
         if (_tail+sz > _limit)
             return nullptr;
         uint8_t* tail = _tail;
@@ -155,7 +155,7 @@ public:
     //  If either the buffer offset or size result in a buffer falling outside
     //  this buffer's memory region, the returned buffer will reflect the
     //  difference
-    Buffer createSubBuffer(int offset, int sz);
+    Buffer createSubBuffer(size_t offset, size_t sz);
     //  creates a buffer mapped to the memory from head to tail of this buffer.
     Buffer createSubBufferFromUsed();
 private:
@@ -173,7 +173,7 @@ class StringBuffer
 {
 public:
     StringBuffer();
-    StringBuffer(int sz, const Memory& memory=Memory());
+    StringBuffer(size_t sz, const Memory& memory=Memory());
     StringBuffer(Buffer&& buffer);
 
     //  skips null characters if delim != 0.
@@ -185,7 +185,7 @@ public:
 private:
     Buffer _buffer;
 };
-    
+
 
 /**
  * @class std_allocator
@@ -225,7 +225,7 @@ struct std_allocator
     #endif
         return temp;
     }
-    
+
     void deallocate(pointer p, size_type) {
     	_allocator.free((void* )p);
     }
@@ -243,8 +243,8 @@ struct std_allocator
     /** @endcond */
 };
 
-template<typename T, class Allocator> 
-inline bool operator==(const std_allocator<T, Allocator>& lha, 
+template<typename T, class Allocator>
+inline bool operator==(const std_allocator<T, Allocator>& lha,
                         const std_allocator<T, Allocator>& rha)
 {
     return lha._allocator == rha._allocator;
