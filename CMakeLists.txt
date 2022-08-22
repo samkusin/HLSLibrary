@@ -27,5 +27,5 @@ add_executable( ckavlib ${PROJECT_SOURCES} ${PROJECT_INCLUDES} )
 
 target_compile_features( ckavlib PRIVATE cxx_std_17 )
 if(CMAKE_CXX_COMPILER_ID MATCHES Clang OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(ckavlib PRIVATE -Wall -Wextra -pedantic -Wno-missing-braces)
+    target_compile_options(ckavlib PRIVATE -Wall -Wextra -pedantic -Wno-missing-braces -Wno-unused-parameter)
 endif()

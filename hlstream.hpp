@@ -78,7 +78,7 @@ private:
     HLSMasterPlaylist::Playlists::const_iterator _toPlayPlaylist;
     std::string _rootUrl;
 
-    int _playlistSegmentIndex;
+    size_t _playlistSegmentIndex;
 
     Buffer _videoBuffer;
     Buffer _audioBuffer;
@@ -97,16 +97,16 @@ private:
     //  read and writeindices.
     struct StreamPosition
     {
-        int readFromIdx;                // read from buffer index
-        int readDoneIdx;
-        int readAUIdx;                  // read access unit within buffer
+        size_t readFromIdx;                // read from buffer index
+        size_t readDoneIdx;
+        size_t readAUIdx;                  // read access unit within buffer
 
-        int writeToIdx;                 // write to buffer index
-        int writeDoneIdx;
+        size_t writeToIdx;                 // write to buffer index
+        size_t writeDoneIdx;
 
-        int bufferCnt;
+        size_t bufferCnt;
 
-        void reset(int bufferCnt);
+        void reset(size_t bufferCnt);
 
         bool hasWriteSpace() const;
         bool hasReadSpace() const;

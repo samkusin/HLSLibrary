@@ -509,7 +509,7 @@ cinekav::ElementaryStream* HLStream::handleOverflowES(uint16_t programId,
     return nullptr;
 }
 
-void HLStream::StreamPosition::reset(int cnt)
+void HLStream::StreamPosition::reset(size_t cnt)
 {
     readFromIdx = 0;
     readAUIdx = 0;
@@ -548,7 +548,7 @@ bool HLStream::StreamPosition::advanceWrite()
 {
     writeDoneIdx = writeToIdx;
 
-    int next = (writeToIdx+1) % bufferCnt;
+    auto next = (writeToIdx+1) % bufferCnt;
 
     if (next == readFromIdx)
         return false;

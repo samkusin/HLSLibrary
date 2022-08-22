@@ -65,7 +65,7 @@ auto HLSPlaylist::segmentAt(size_t index) -> Segment*
 
 auto HLSPlaylist::segmentAt(size_t index) const -> const Segment*
 {
-    if (index < 0 || index >= _segments.size())
+    if (index >= _segments.size())
         return nullptr;
     return &_segments[index];
 }

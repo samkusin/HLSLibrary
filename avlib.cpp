@@ -10,6 +10,7 @@
 #include "avlib.hpp"
 
 #include <cstdlib>
+#include <cstring>
 
 namespace cinekav {
 
