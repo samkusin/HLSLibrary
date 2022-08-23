@@ -420,7 +420,7 @@ cinekav::ElementaryStream* HLStream::createES
             uint8_t esIndex = _videoESIndex++;
 
 
-            int thisIdx = _videoPos.writeToIdx;
+            auto thisIdx = _videoPos.writeToIdx;
             const auto kBufferSize = _videoBuffer.available() / 2;
             Buffer streamBuffer = _videoBuffer.createSubBuffer(
                 thisIdx * kBufferSize,
@@ -439,7 +439,7 @@ cinekav::ElementaryStream* HLStream::createES
             uint8_t esIndex = _audioESIndex++;
 
 
-            int thisIdx = _audioPos.writeToIdx;
+            auto thisIdx = _audioPos.writeToIdx;
             const auto kBufferSize = _audioBuffer.available() / 2;
             Buffer streamBuffer = _audioBuffer.createSubBuffer(
                 thisIdx * kBufferSize,

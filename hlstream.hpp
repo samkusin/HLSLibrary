@@ -15,6 +15,13 @@
 #include "hlsplaylist.hpp"
 #include "mpegts.hpp"
 
+/* This library attempts to implement a subset of the HTTP Live Streaming
+   specification documented in RFC 8216: https://www.rfc-editor.org/rfc/rfc8216
+
+ */
+
+
+
 namespace cinekav {
     namespace mpegts {
         class ElementaryStream;
