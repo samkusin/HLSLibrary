@@ -2,6 +2,15 @@ cmake_minimum_required(VERSION 3.15.7)
 
 project( cinekav )
 
+if (HLSLIBRARY_BUILD_SAMPLE)
+# This is used by the sample.
+# Linux: Install one of the libcurl packages
+# Windows: Install libcurl locally and provide either a CMAKE_PREFIX_PATH or
+#          CURL_DIR CMake cache variable on configuration.
+
+find_package(CURL)
+endif()
+
 #
 # Build Project
 #
